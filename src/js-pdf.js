@@ -1,100 +1,118 @@
-const jspdf = require('jspdf');
-const html2canvas = require('html2canvas');
-const { defaultOpts } = require('./config');
+const jspdf = require('jspdf')
+const html2canvas = require('html2canvas')
+const { defaultOpts } = require('./config')
 
-const { jsPDF } = jspdf;
+const { jsPDF } = jspdf
 
-const images = function(type) {
-  let types = {
-    'image/jpeg': 'JPEG',
-    'image/png': 'PNG',
-    'image/webp': 'WEBP'
-  };
-  return types[type];
-};
+const images = function (type) {
+    const types = {
+        'image/jpeg': 'JPEG',
+        'image/png': 'PNG',
+        'image/webp': 'WEBP',
+    }
+    return types[type]
+}
 
 // ----- jsPDF -----
 function getPdf(opts) {
-  const pdf = new jsPDF(opts.jsPDF);
-  const pdfWidth = pdf.internal.pageSize.getWidth();
-  const pdfHeight = pdf.internal.pageSize.getHeight();
-  const position = 0; // page's start position
-  return {
-    pdf,
-    pdfWidth,
-    pdfHeight,
-    position,
-  };
+    const pdf = new jsPDF(opts.jsPDF)
+    const pdfWidth = pdf.internal.pageSize.getWidth()
+    const pdfHeight = pdf.internal.pageSize.getHeight()
+    const position = 0 // page's start position
+    return {
+        pdf,
+        pdfWidth,
+        pdfHeight,
+        position,
+    }
 }
 
 // canvas to DataUri
 function getPageData({ canvas, pdf, pdfWidth, opts }) {
-  const pageData = canvas.toDataURL(opts.imageType, 1.0);
-  const imgProps= pdf.getImageProperties(pageData);
-  const imgHeight = pdfWidth / imgProps.width * imgProps.height;
-  return {
-    pageData,
-    imgHeight,
-  };
+    const pageData = canvas.toDataURL(opts.imageType, 1.0)
+    const imgProps = pdf.getImageProperties(pageData)
+    const imgHeight = (pdfWidth / imgProps.width) * imgProps.height
+    return {
+        pageData,
+        imgHeight,
+    }
 }
 
 function onCanvasRendered(canvas, pdfInstance, opts) {
-  let { pdf, pdfWidth, pdfHeight, position } = pdfInstance;
-  const { pageData, imgHeight } = getPageData({ canvas, pdf, pdfWidth, opts });
+    let { pdf, pdfWidth, pdfHeight, position } = pdfInstance
+    const { pageData, imgHeight } = getPageData({ canvas, pdf, pdfWidth, opts })
 
-  // height which not yet print to PDF.
-  let leftHeight = imgHeight;
+    // height which not yet print to PDF.
+    let leftHeight = imgHeight
 
-  // check if need reset position
-  if (position < 0) {
-    pdf.addPage();
-    position = 0;
-  }
-
-  // check if content needs multi pages
-  if (leftHeight < pdfHeight) {
-    pdf.addImage(pageData, images(opts.imageType), 0, position, pdfWidth, imgHeight);
-    position -= leftHeight;
-  } else {
-    while (leftHeight > 0) {
-      pdf.addImage(pageData, images(opts.imageType), 0, position, pdfWidth, imgHeight);
-      leftHeight -= pdfHeight;
-      position -= pdfHeight;
-      // check if there's still left content
-      if (leftHeight > 0) {
-        pdf.addPage();
-      }
+    // check if need reset position
+    if (position < 0) {
+        pdf.addPage()
+        position = 0
     }
-  }
 
-  // expose pdf for later usage
-  return { pdf, position };
+    // check if content needs multi pages
+    if (leftHeight < pdfHeight) {
+        pdf.addImage(
+            pageData,
+            images(opts.imageType),
+            opts.margin.left,
+            position + opts.margin.top,
+            pdfWidth - opts.margin.left - opts.margin.right,
+            imgHeight - opts.margin.bottom
+        )
+        position -= leftHeight
+    } else {
+        while (leftHeight > 0) {
+            pdf.addImage(
+                pageData,
+                images(opts.imageType),
+                opts.margin.left,
+                position + opts.margin.top,
+                pdfWidth - opts.margin.left - opts.margin.right,
+                imgHeight - opts.margin.bottom
+            )
+            leftHeight -= pdfHeight
+            position -= pdfHeight
+            // check if there's still left content
+            if (leftHeight > 0) {
+                pdf.addPage()
+            }
+        }
+    }
+
+    // expose pdf for later usage
+    return { pdf, position }
 }
 
 async function html2PDF(dom, opts = {}) {
-  opts = Object.assign(defaultOpts, opts);
-  const pdfInstance = getPdf(opts);
+    opts = Object.assign(defaultOpts, opts)
+    const pdfInstance = getPdf(opts)
 
-  // multi pages by nodes
-  if (dom.length) {
-    for (let i = 0; i < dom.length; i++) {
-      const canvas = await html2canvas(dom[i], opts.html2canvas);
-      const { pdf, position } = onCanvasRendered(canvas, pdfInstance, opts);
-      pdfInstance.pdf = pdf;
-      pdfInstance.position = position;
+    // multi pages by nodes
+    if (dom.length) {
+        for (let i = 0; i < dom.length; i++) {
+            const canvas = await html2canvas(dom[i], opts.html2canvas)
+            const { pdf, position } = onCanvasRendered(
+                canvas,
+                pdfInstance,
+                opts
+            )
+            pdfInstance.pdf = pdf
+            pdfInstance.position = position
+        }
+    } else {
+        // single page for one node
+        const canvas = await html2canvas(dom, opts.html2canvas)
+        onCanvasRendered(canvas, pdfInstance, opts)
     }
-  } else {
-    // single page for one node
-    const canvas = await html2canvas(dom, opts.html2canvas);
-    onCanvasRendered(canvas, pdfInstance, opts);
-  }
-  
-  // save pdf
-  opts.success(pdfInstance.pdf);
+
+    // save pdf
+    opts.success(pdfInstance.pdf)
 }
 
 // if (window) {
 //   window.html2PDF = html2PDF;
 // }
 
-module.exports = html2PDF;
+module.exports = html2PDF
